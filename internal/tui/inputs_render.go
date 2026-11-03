@@ -93,6 +93,8 @@ func renderCenteredForm(s inputState, width, height int, now time.Time) string {
 		return renderCloseForm(s, innerW, innerH)
 	case inputDatesForm:
 		return renderDatesForm(s, innerW, now)
+	case inputRecurrenceForm:
+		return renderRecurrenceForm(s, innerW, now)
 	}
 	return renderSingleFieldForm(s, innerW, innerH)
 }

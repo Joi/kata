@@ -854,6 +854,8 @@ func (m Model) routeTopLevel(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	case cronSavedMsg:
 		next, cmd := m.cronSaved(msg)
 		return next, cmd, true
+	case recurrenceFormLoadedMsg:
+		return m.openRecurrenceForm(msg), nil, true
 	case tea.BackgroundColorMsg:
 		// The terminal answered Init's in-loop background query. Only
 		// colorAuto consults the answer — explicit KATA_COLOR_MODE
@@ -968,6 +970,9 @@ func (m Model) routeTopLevel(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		if next, cmd, ok := m.routeDatesKey(msg); ok {
 			return next, cmd, true
 		}
+		if next, cmd, ok := m.routeRecurrenceKey(msg); ok {
+			return next, cmd, true
+		}
 		if next, cmd, ok := m.routeReopenKey(msg); ok {
 			return next, cmd, true
 		}
@@ -1055,7 +1060,7 @@ func (m Model) mutationForKey(msg tea.KeyPressMsg) (withinSubtree, mutation bool
 	switch {
 	case m.keymap.NewIssue.matches(msg):
 		return false, true
-	case m.keymap.Close.matches(msg), m.keymap.Reopen.matches(msg), m.keymap.SetDates.matches(msg):
+	case m.keymap.Close.matches(msg), m.keymap.Reopen.matches(msg), m.keymap.SetDates.matches(msg), m.keymap.SetRecurrence.matches(msg):
 		return true, true
 	case !m.detailIsActive():
 		return false, false
@@ -1320,6 +1325,9 @@ func (m Model) routeInputKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 		}
 	}
 
+	if next, handled := m.routeRecurrenceFormKey(msg); handled {
+		return next, nil
+	}
 	if m.input.kind.isPanelPrompt() {
 		if m.input.saving {
 			return m, nil
@@ -1828,6 +1836,9 @@ func (m Model) routeFormMutation(mut mutationDoneMsg) (tea.Model, tea.Cmd) {
 	if m.input.kind == inputDatesForm && isRevisionConflict(mut.err) && mut.resp != nil && mut.resp.Issue != nil {
 		return m.reloadDatesForm(*mut.resp.Issue), nil
 	}
+	if m.input.kind == inputRecurrenceForm && isRevisionConflict(mut.err) && mut.resp != nil && mut.resp.current != nil {
+		return m.reloadRecurrenceForm(*mut.resp.current), nil
+	}
 	if mut.err != nil {
 		m.input.saving = false
 		m.input.err = mut.kind + " failed: " + mut.err.Error()
@@ -1862,7 +1873,7 @@ func (m Model) routeFormMutation(mut mutationDoneMsg) (tea.Model, tea.Cmd) {
 	// detail's body / comments list updates. Re-classify as if it
 	// came from detail (gen=current detail gen) so existing
 	// applyMutation logic kicks in.
-	if formKind == inputCloseForm || formKind == inputDatesForm {
+	if formKind == inputCloseForm || formKind == inputDatesForm || formKind == inputRecurrenceForm {
 		mut.origin = target.origin
 		mut.gen = target.detailGen
 	} else {
@@ -2091,6 +2102,9 @@ func (m Model) commitFormInput(kind inputKind) (Model, tea.Cmd) {
 	}
 	if kind == inputDatesForm {
 		return m.commitDatesForm()
+	}
+	if kind == inputRecurrenceForm {
+		return m.commitRecurrenceForm()
 	}
 	if kind == inputCloseForm {
 		in, err := closeInputFromForm(m.input, m.list.actor)
@@ -3195,6 +3209,14 @@ func (m Model) routeModalKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			m.modal = modalNone
 			return m, nil
 		}
+	case modalStopRecurrence:
+		switch msg.String() {
+		case "y", "Y":
+			return m.confirmStopRecurrence()
+		case "n", "N", "esc":
+			m.modal = modalNone
+			return m, nil
+		}
 	case modalReopenBacklog:
 		switch msg.String() {
 		case "y", "Y":
@@ -3685,7 +3707,7 @@ func (m Model) viewContent() string {
 func (m Model) overlayInputAndModal(body string) string {
 	if m.input.kind.isCenteredForm() {
 		var now time.Time
-		if m.input.kind == inputDatesForm {
+		if m.input.kind == inputDatesForm || m.input.kind == inputRecurrenceForm {
 			now = m.toastNow()
 		}
 		form := renderCenteredForm(m.input, m.width, m.height, now)

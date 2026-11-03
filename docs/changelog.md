@@ -1,7 +1,7 @@
 ---
 title: Changelog
 description: Release history for kata
-last_edited: 2026-11-03
+last_edited: 2026-11-04
 ---
 
 All notable changes to kata, grouped by release. Versioned releases start with
@@ -9,6 +9,13 @@ All notable changes to kata, grouped by release. Versioned releases start with
 
 ## Unreleased
 
+- Start, change or stop an issue's recurrence in `kata tui` with `O`, from the
+  list or the detail. The form takes the RRULE as written, a start date and an
+  IANA zone, and shows the daemon's error with your input kept. A change is
+  revision-guarded, and a conflict shows the current recurrence. Stopping asks
+  first, and an issue that parents a recurring cron job is refused, as in
+  `kata schedule --repeat`. The detail now shows the rule, the next occurrence
+  and the zone. See the [CLI reference](reference/cli.md#daemon-and-diagnostics).
 - Load the web UI's issue list and graph on SQLite and PostgreSQL stores with
   tens of thousands of issues without exceeding SQL parameter limits.
 - See when a cron job runs next: the `kata tui` Jobs tab detail lists the next

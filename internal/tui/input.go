@@ -36,6 +36,7 @@ const (
 	inputFilterForm          // list `f` — multi-axis filter modal: Status/Owner/Search
 	inputCloseForm           // list/detail `x` — authenticated close message + evidence
 	inputDatesForm           // list/detail `d` — Scheduled and Deadline dates
+	inputRecurrenceForm      // list/detail `O` — Rule, Start and Zone of a recurrence
 )
 
 type searchFocus int
@@ -75,7 +76,7 @@ func (k inputKind) isCommandBar() bool {
 // branch that keeps it out of commitFormInput.
 func (k inputKind) isCenteredForm() bool {
 	switch k {
-	case inputBodyEditForm, inputCommentForm, inputNewIssueForm, inputFilterForm, inputCloseForm, inputDatesForm:
+	case inputBodyEditForm, inputCommentForm, inputNewIssueForm, inputFilterForm, inputCloseForm, inputDatesForm, inputRecurrenceForm:
 		return true
 	}
 	return false
@@ -118,6 +119,9 @@ const (
 	fieldEvidenceValue
 	fieldScheduled
 	fieldDeadline
+	fieldRule
+	fieldStart
+	fieldZone
 )
 
 // radioField backs a fieldRadio inputField: a finite set of choices
@@ -343,6 +347,7 @@ type inputState struct {
 	target                 formTarget
 	formGen                int64
 	dates                  datesFormState
+	recurrence             recurrenceFormState
 	suggestHighlight       int
 	suggestScroll          int
 }
@@ -667,7 +672,7 @@ func (s inputState) resetFilterFields() inputState {
 // field at all so $EDITOR is never offered.
 func (s inputState) ctrlEAllowed() bool {
 	switch s.kind {
-	case inputFilterForm, inputDatesForm:
+	case inputFilterForm, inputDatesForm, inputRecurrenceForm:
 		return false
 	case inputNewIssueForm:
 		return s.activeFieldIs(fieldBody)
@@ -686,7 +691,7 @@ func (s inputState) shouldCycleFields() bool {
 	if len(s.fields) <= 1 {
 		return false
 	}
-	return s.kind == inputNewIssueForm || s.kind == inputFilterForm || s.kind == inputCloseForm || s.kind == inputDatesForm
+	return s.kind == inputNewIssueForm || s.kind == inputFilterForm || s.kind == inputCloseForm || s.kind == inputDatesForm || s.kind == inputRecurrenceForm
 }
 
 // shouldAdvanceOnEnter reports whether enter on the active single-
@@ -700,7 +705,7 @@ func (s inputState) shouldAdvanceOnEnter() bool {
 		return false
 	}
 	switch s.kind {
-	case inputFilterForm, inputCloseForm, inputDatesForm:
+	case inputFilterForm, inputCloseForm, inputDatesForm, inputRecurrenceForm:
 		return true
 	case inputNewIssueForm:
 		return !s.activeFieldIs(fieldBody)

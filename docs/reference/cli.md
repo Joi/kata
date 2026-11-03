@@ -1,7 +1,7 @@
 ---
 title: CLI reference
 description: Reference Kata's command-line flags, issue relationships, output modes, and administration workflows.
-last_edited: 2026-11-02
+last_edited: 2026-11-04
 ---
 
 # CLI reference
@@ -2046,6 +2046,24 @@ since the form opened, nothing is written; the form stays open and shows the
 current dates so you can edit them again. The detail properties show both
 dates once either is set, and `u` writes the previous dates back under the
 same revision check.
+
+In the issue list or detail, press `O` to start, change or stop the selected
+issue's recurrence, the same one `kata schedule <ref> <date> --repeat` manages.
+The form has three fields. **Rule** is the RRULE text, sent as written: the
+daemon is the only validator, and its error appears in the form with your input
+kept. **Start** takes the dates `kata schedule` takes, plus `today`, `tomorrow`,
+`+Nd` and `+Nw`. **Zone** starts as the recurrence's zone, else the issue's
+`timezone` metadata, else your own IANA zone (`TZ`, then the `/etc/localtime`
+link); it is never `Local`. Starting a recurrence rewrites the issue's
+`scheduled_on` to the first occurrence. `Ctrl+o` saves and `Esc` cancels. A
+change is guarded by `If-Match` on the revision the form read, and a start on
+the issue's; if another client got there first, nothing is written, the form
+keeps what you typed and shows the current recurrence. `Ctrl+x` asks for
+confirmation and then stops the recurrence; occurrences already created stay,
+as with `--repeat -`. An issue that parents a recurring cron job is refused,
+exactly as the CLI refuses it. The issue detail shows a `repeats:` line with
+the rule, the next occurrence and the zone. A recurrence change clears the undo
+history, since `u` cannot reverse it.
 
 In the issue list, `v` toggles between nested and flat views: nested groups
 children under parents, while flat shows matching issues as peers in list
