@@ -22,6 +22,10 @@ type RecurrenceInput struct {
 	Recurrence    *recurrenceclient.View
 }
 
+// apiVersionRecurrenceStart is the first daemon API that honours If-Match on
+// a recurrence create.
+const apiVersionRecurrenceStart = "0.37.0"
+
 type recurrenceAPI interface {
 	SaveRecurrence(ctx context.Context, projectID int64, ref string, in RecurrenceInput) (*MutationResp, error)
 }
@@ -47,6 +51,14 @@ func (c *Client) SaveRecurrence(ctx context.Context, projectID int64, ref string
 	apiClient, err := c.generatedClient()
 	if err != nil {
 		return nil, err
+	}
+	if !in.Stop && in.Recurrence == nil {
+		// Daemons before 0.37.0 ignore If-Match on a recurrence create, so a
+		// start there could overwrite an issue edit made after the form read it.
+		if err := requireAPIVersion(ctx, apiClient, apiVersionRecurrenceStart,
+			"starting a recurrence requires daemon API "+apiVersionRecurrenceStart+" or newer"); err != nil {
+			return nil, &mutationPreflightError{err}
+		}
 	}
 	wire, callErr := apiClient.ShowIssueWithResponse(ctx, &generated.ShowIssueRequestOptions{
 		PathParams: &generated.ShowIssuePath{ProjectID: projectID, Ref: ref},
