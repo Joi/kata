@@ -1836,7 +1836,7 @@ func (m Model) routeFormMutation(mut mutationDoneMsg) (tea.Model, tea.Cmd) {
 	if m.input.kind == inputDatesForm && isRevisionConflict(mut.err) && mut.resp != nil && mut.resp.Issue != nil {
 		return m.reloadDatesForm(*mut.resp.Issue), nil
 	}
-	if m.input.kind == inputRecurrenceForm && isRevisionConflict(mut.err) && mut.resp != nil && mut.resp.current != nil {
+	if m.input.kind == inputRecurrenceForm && (isRevisionConflict(mut.err) || isNotFound(mut.err)) && mut.resp != nil && mut.resp.current != nil {
 		return m.reloadRecurrenceForm(*mut.resp.current), nil
 	}
 	if mut.err != nil {

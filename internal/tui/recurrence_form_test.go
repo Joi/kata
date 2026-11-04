@@ -403,6 +403,99 @@ func TestRecurrenceFormConflictKeepsInputAndShowsTheCurrentRecurrence(t *testing
 	})
 }
 
+// failingReadsAfterRecurrenceWrite passes requests to the daemon until a
+// recurrence change or stop has gone through, then fails every later read:
+// the reread after a refused write cannot reach the daemon.
+type failingReadsAfterRecurrenceWrite struct {
+	inner   *http.Client
+	written *bool
+}
+
+func (f failingReadsAfterRecurrenceWrite) RoundTrip(req *http.Request) (*http.Response, error) {
+	if *f.written && req.Method == http.MethodGet {
+		return nil, errors.New("daemon unreachable after the write")
+	}
+	if strings.Contains(req.URL.Path, "/recurrences/") && req.Method != http.MethodGet {
+		*f.written = true
+	}
+	return f.inner.Do(req)
+}
+
+func TestRecurrenceFormRecoversWhenAnotherClientStopsTheRecurrence(t *testing.T) {
+	stopBehindTheTUI := func(h *recurrenceHarness, rec recurrenceclient.View) {
+		h.t.Helper()
+		require.NoError(h.t, recurrenceclient.Stop(h.t.Context(), h.api, h.issue.ProjectID, rec, "bob"))
+		require.Empty(h.t, h.rows())
+	}
+	t.Run("a change keeps the typed input and stops targeting the stopped recurrence", func(t *testing.T) {
+		h := newRecurrenceHarness(t, viewDetail)
+		stopped := h.startBehindTheTUI("FREQ=WEEKLY", "2026-11-09", "Europe/Paris")
+		h.open()
+		stopBehindTheTUI(h, stopped)
+		h.fill("FREQ=DAILY", "2026-11-10", "Asia/Tokyo")
+
+		h.save()
+
+		require.Equal(t, inputRecurrenceForm, h.m.input.kind)
+		assert.False(t, h.m.input.saving)
+		rule, start, zone := h.values()
+		assert.Equal(t, []string{"FREQ=DAILY", "2026-11-10", "Asia/Tokyo"}, []string{rule, start, zone}, "the typed input stays")
+		assert.Contains(t, h.m.input.err, "Another client stopped this recurrence")
+		assert.NotContains(t, h.m.input.err, "save again", "a stopped recurrence's issue cannot repeat again")
+		assert.Nil(t, h.m.input.recurrence.rec, "the retry no longer targets the stopped recurrence")
+		assert.Contains(t, h.page(), "no recurrence", "the current state is shown")
+		assert.Empty(t, h.rows(), "nothing was written")
+
+		h.save()
+
+		require.Equal(t, inputRecurrenceForm, h.m.input.kind)
+		assert.NotContains(t, h.m.input.err, stopped.UID, "the retry is not sent to the stopped recurrence")
+		assert.Contains(t, h.m.input.err, "already part of a recurrence", "the daemon answers the retry against the issue as it is now")
+		rule, start, zone = h.values()
+		assert.Equal(t, []string{"FREQ=DAILY", "2026-11-10", "Asia/Tokyo"}, []string{rule, start, zone})
+		assert.Empty(t, h.rows(), "nothing was written")
+	})
+	t.Run("a stop shows that nothing is left to stop", func(t *testing.T) {
+		h := newRecurrenceHarness(t, viewDetail)
+		stopped := h.startBehindTheTUI("FREQ=WEEKLY", "2026-11-09", "Europe/Paris")
+		h.open()
+		stopBehindTheTUI(h, stopped)
+
+		h.key(tea.KeyPressMsg{Code: 'x', Mod: tea.ModCtrl})
+		h.send(h.key(runeKey('y')))
+
+		require.Equal(t, inputRecurrenceForm, h.m.input.kind)
+		assert.Contains(t, h.m.input.err, "Another client stopped this recurrence")
+		assert.Nil(t, h.m.input.recurrence.rec)
+		assert.Contains(t, h.page(), "no recurrence")
+		h.key(tea.KeyPressMsg{Code: 'x', Mod: tea.ModCtrl})
+		assert.Equal(t, modalNone, h.m.modal, "there is nothing left to stop")
+	})
+	t.Run("a failed reread keeps the error and the form as it was", func(t *testing.T) {
+		h := newRecurrenceHarness(t, viewDetail)
+		stopped := h.startBehindTheTUI("FREQ=WEEKLY", "2026-11-09", "Europe/Paris")
+		h.open()
+		stopBehindTheTUI(h, stopped)
+		written := false
+		h.m.api = newConnectedUndoClient(t, NewClient(h.env.URL,
+			&http.Client{Transport: failingReadsAfterRecurrenceWrite{inner: h.env.HTTP, written: &written}}))
+		h.fill("FREQ=DAILY", "2026-11-10", "Asia/Tokyo")
+
+		h.save()
+
+		require.True(t, written, "the change reached the daemon")
+		require.Equal(t, inputRecurrenceForm, h.m.input.kind)
+		assert.False(t, h.m.input.saving)
+		assert.Contains(t, h.m.input.err, "not found", "the daemon's refusal is shown")
+		assert.NotContains(t, h.m.input.err, "changed since the form opened", "no reread is implied")
+		require.NotNil(t, h.m.input.recurrence.rec, "the form keeps the recurrence it opened on")
+		assert.Equal(t, stopped.UID, h.m.input.recurrence.rec.UID)
+		assert.NotContains(t, h.page(), "no recurrence")
+		rule, start, zone := h.values()
+		assert.Equal(t, []string{"FREQ=DAILY", "2026-11-10", "Asia/Tokyo"}, []string{rule, start, zone})
+	})
+}
+
 func TestRecurrenceWriteClearsUndoHistory(t *testing.T) {
 	h := newRecurrenceHarness(t, viewDetail)
 	h.m.undoHistory.push(undoEntry{kind: "dates", uid: h.issue.UID, projectID: h.issue.ProjectID})

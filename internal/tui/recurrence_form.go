@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -28,6 +29,11 @@ type recurrenceFormState struct {
 }
 
 const recurrenceChangedMessage = "The issue changed since the form opened; nothing was written. The current recurrence is shown below; save again to write your input over it."
+
+// recurrenceStoppedMessage answers a save refused because the recurrence the
+// form read was stopped. The daemon never lets an issue that belonged to a
+// stopped recurrence start another, so it does not invite a retry.
+const recurrenceStoppedMessage = "Another client stopped this recurrence; nothing was written. An issue whose recurrence was stopped cannot repeat again."
 
 // recurrenceFormLoadedMsg is the issue and recurrence the Repeat form opens
 // on, read when O was pressed. formGen ties it to that key press.
@@ -226,8 +232,11 @@ func dispatchFormSaveRecurrence(apiClient any, target formTarget, in RecurrenceI
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		resp, err := writer.SaveRecurrence(ctx, target.projectID, target.issueShortID, in)
-		if isRevisionConflict(err) {
+		switch {
+		case isRevisionConflict(err):
 			resp = withCurrentRecurrence(ctx, apiClient, target, resp)
+		case in.Recurrence != nil && isNotFound(err):
+			resp = withStoppedRecurrence(ctx, apiClient, target, *in.Recurrence, resp)
 		}
 		return mutationDoneMsg{
 			origin: "form", gen: target.detailGen, kind: kind, formGen: formGen,
@@ -266,6 +275,30 @@ func withCurrentRecurrence(ctx context.Context, apiClient any, target formTarget
 	return resp
 }
 
+// withStoppedRecurrence answers a change or stop refused because the
+// recurrence the form read is gone, as when another client stopped it. Only a
+// successful reread that no longer shows that recurrence makes the refusal
+// stale state the form reloads from; a failed reread, or one that still shows
+// the recurrence, leaves the response unchanged so the refusal is reported as
+// it is.
+func withStoppedRecurrence(ctx context.Context, apiClient any, target formTarget, gone recurrenceclient.View, resp *MutationResp) *MutationResp {
+	var refused *MutationResp
+	if resp != nil {
+		copied := *resp
+		refused = &copied
+	}
+	read := withCurrentRecurrence(ctx, apiClient, target, refused)
+	if read == nil || read.current == nil || (read.current.rec != nil && read.current.rec.UID == gone.UID) {
+		return resp
+	}
+	return read
+}
+
+func isNotFound(err error) bool {
+	apiErr, ok := errors.AsType[*APIError](err)
+	return ok && apiErr != nil && apiErr.Status == http.StatusNotFound
+}
+
 // reloadRecurrenceForm is the answer to a refused save: the form keeps what
 // the user typed, shows the recurrence that beat it, and the next save is
 // guarded on the revisions just read.
@@ -280,6 +313,9 @@ func (m Model) reloadRecurrenceForm(current recurrenceSnapshot) Model {
 	}
 	m.input.saving = false
 	m.input.err = recurrenceChangedMessage
+	if current.rec == nil && current.issue.RecurrenceID != nil {
+		m.input.err = recurrenceStoppedMessage
+	}
 	if m.detail.issue != nil && m.detail.issue.UID == current.issue.UID {
 		*m.detail.issue = current.issue
 		m.detail.recurrence = current.rec
