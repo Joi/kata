@@ -1841,7 +1841,7 @@ func (m Model) routeFormMutation(mut mutationDoneMsg) (tea.Model, tea.Cmd) {
 	}
 	if mut.err != nil {
 		m.input.saving = false
-		m.input.err = mut.kind + " failed: " + mut.err.Error()
+		m.input.err = formMutationError(mut.kind, mut.err)
 		return m, m.reportShownError(mut.kind)
 	}
 	if m.input.kind == inputNewIssueForm {
@@ -3705,18 +3705,50 @@ func (m Model) viewContent() string {
 }
 
 func (m Model) overlayInputAndModal(body string) string {
+	footerVisible := m.footerVisibleBelow(body)
+	formCoversFooter := false
 	if m.input.kind.isCenteredForm() {
 		var now time.Time
 		if m.input.kind == inputDatesForm || m.input.kind == inputRecurrenceForm {
 			now = m.toastNow()
 		}
-		form := renderCenteredForm(m.input, m.width, m.height, now)
+		// The footer lists the form's keys only while no modal replaces them.
+		chrome := formChrome{actionsInFooter: false}
+		form := renderCenteredFormWith(m.input, m.width, m.height, now, chrome)
+		formCoversFooter = !footerVisible(lipgloss.Height(form))
+		if m.modal == modalNone && !formCoversFooter {
+			chrome.actionsInFooter = true
+			form = renderCenteredFormWith(m.input, m.width, m.height, now, chrome)
+		}
 		body = overlayModal(body, form, m.width, m.height)
 	}
 	if m.modal != modalNone {
-		body = overlayModal(body, renderConfirmModal(m.modal, m.reopenPrompt), m.width, m.height)
+		modal := renderConfirmModal(m.modal, m.reopenPrompt)
+		if m.modal == modalStopRecurrence && !formCoversFooter &&
+			footerVisible(lipgloss.Height(renderStopRecurrenceModal(false))) {
+			modal = renderStopRecurrenceModal(false)
+		}
+		body = overlayModal(body, modal, m.width, m.height)
 	}
 	return body
+}
+
+// footerVisibleBelow reports, for an overlay of a given height, whether the
+// background's footer help table both lists the active form's or modal's keys
+// and stays uncovered once overlayModal centers the overlay. A form or modal
+// then leaves those keys to the footer; otherwise it lists them itself, so
+// each action hint appears exactly once. Backgrounds without that footer (too
+// narrow, too short, Help, auxiliary views) never match.
+func (m Model) footerVisibleBelow(body string) func(overlayHeight int) bool {
+	footer := renderFooterHelpTable(m.helpRows(), m.width)
+	bodyLines := strings.Count(body, "\n") + 1
+	if footer == "" || bodyLines > m.height || !strings.HasSuffix(body, "\n"+footer) {
+		return func(int) bool { return false }
+	}
+	footerTop := bodyLines - lipgloss.Height(footer)
+	return func(overlayHeight int) bool {
+		return max((m.height-overlayHeight)/2, 0)+overlayHeight <= footerTop
+	}
 }
 
 func (m Model) appendNonListDetailExtras(body string) string {

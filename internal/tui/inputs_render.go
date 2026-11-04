@@ -79,6 +79,17 @@ func renderPanelPrompt(s inputState, width int) string {
 // commit 5a added the filter modal, which is multi-field but uses a
 // radio for the Status axis instead of a textinput.
 func renderCenteredForm(s inputState, width, height int, now time.Time) string {
+	return renderCenteredFormWith(s, width, height, now, formChrome{})
+}
+
+// formChrome is what the screen around a centered form already shows.
+type formChrome struct {
+	// actionsInFooter is true when the visible footer help table lists the
+	// form's keys, so the form need not repeat optional ones.
+	actionsInFooter bool
+}
+
+func renderCenteredFormWith(s inputState, width, height int, now time.Time, chrome formChrome) string {
 	if width < formMinWidth || height < formMinHeight {
 		return renderTinyFormFallback(s)
 	}
@@ -94,7 +105,7 @@ func renderCenteredForm(s inputState, width, height int, now time.Time) string {
 	case inputDatesForm:
 		return renderDatesForm(s, innerW, now)
 	case inputRecurrenceForm:
-		return renderRecurrenceForm(s, innerW, now)
+		return renderRecurrenceForm(s, innerW, now, chrome)
 	}
 	return renderSingleFieldForm(s, innerW, innerH)
 }

@@ -39,15 +39,18 @@ func renderQuitConfirmModal() string {
 	return modalBoxStyle.Render(body)
 }
 
-func renderStopRecurrenceModal() string {
-	body := strings.Join([]string{
+// renderStopRecurrenceModal asks before stopping a recurrence. withActions
+// adds the answer row; leave it out only when the footer already lists y and n.
+func renderStopRecurrenceModal(withActions bool) string {
+	lines := []string{
 		"Stop repeating?",
 		"",
 		"No new occurrences will be created. Existing ones stay.",
-		"",
-		"[Y] Stop repeating    [N] Keep",
-	}, "\n")
-	return modalBoxStyle.Render(body)
+	}
+	if withActions {
+		lines = append(lines, "", "[Y] Stop repeating    [N] Keep")
+	}
+	return modalBoxStyle.Render(strings.Join(lines, "\n"))
 }
 
 func renderDiscardCommentModal() string {
@@ -74,7 +77,7 @@ func renderConfirmModal(kind modalKind, reopen *reopenPrompt) string {
 	case modalReopenBacklog:
 		return renderReopenBacklogModal(reopen)
 	case modalStopRecurrence:
-		return renderStopRecurrenceModal()
+		return renderStopRecurrenceModal(true)
 	case modalQuitConfirm:
 		return renderQuitConfirmModal()
 	case modalDiscardComment:

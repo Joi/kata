@@ -10,6 +10,7 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"go.kenn.io/kata/internal/recurrence/recurrenceclient"
 )
 
@@ -309,7 +310,7 @@ func renderRecurrenceRow(rec *recurrenceclient.View, width int) string {
 
 // renderRecurrenceForm lays out the three fields, the day the start resolves
 // to, and after a refused save the recurrence that beat it.
-func renderRecurrenceForm(s inputState, innerW int, now time.Time) string {
+func renderRecurrenceForm(s inputState, innerW int, now time.Time, chrome formChrome) string {
 	parts := []string{titleStyle.Render(s.title)}
 	for idx := range s.fields {
 		parts = append(parts, renderNewIssueField(s, idx, innerW))
@@ -323,20 +324,47 @@ func renderRecurrenceForm(s inputState, innerW int, now time.Time) string {
 	if status := renderFormStatus(s); status != "" {
 		parts = append(parts, status)
 	}
-	parts = append(parts, renderRecurrenceFooter(s, innerW))
+	parts = append(parts, renderRecurrenceFooter(s, innerW, chrome))
 	return modalBoxStyle.Width(innerW+2).Padding(0, 1).Render(strings.Join(parts, "\n"))
 }
 
-func renderRecurrenceFooter(s inputState, innerW int) string {
+// renderRecurrenceFooter lists the form's keys inside the box. The stop
+// shortcut is left to the screen footer when that footer shows it; when it
+// does not, nothing else on screen says how to stop, so a form too narrow
+// for one line gives the shortcut a line of its own instead of dropping it.
+func renderRecurrenceFooter(s inputState, innerW int, chrome formChrome) string {
 	if s.saving {
 		return statusStyle.Render("saving…")
 	}
-	keys := "ctrl+o save · esc cancel · tab next"
-	if s.recurrence.rec != nil {
-		keys += " · ctrl+x stop repeating"
+	const base = "ctrl+o save · esc cancel"
+	stop := ""
+	if s.recurrence.rec != nil && !chrome.actionsInFooter {
+		stop = "ctrl+x stop repeating"
 	}
-	if len(keys) > innerW {
-		return subtleStyle.Render("ctrl+o save · esc cancel")
+	for _, keys := range []string{base + " · tab next", base} {
+		if stop != "" {
+			keys += " · " + stop
+		}
+		if lipgloss.Width(keys) <= innerW {
+			return subtleStyle.Render(keys)
+		}
 	}
-	return subtleStyle.Render(keys)
+	if stop != "" {
+		return subtleStyle.Render(base + "\n" + stop)
+	}
+	return subtleStyle.Render(base)
+}
+
+// formMutationError words a refused form save for the person who made it,
+// keeping the daemon's reason after the colon.
+func formMutationError(kind string, err error) string {
+	action, ok := map[string]string{
+		"recurrence.start":  "Could not start repeat",
+		"recurrence.change": "Could not change repeat",
+		"recurrence.stop":   "Could not stop repeat",
+	}[kind]
+	if !ok {
+		action = kind + " failed"
+	}
+	return action + ": " + err.Error()
 }
