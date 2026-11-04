@@ -16,6 +16,7 @@ import (
 	"go.kenn.io/kata/internal/recurrence/recurrenceclient"
 	"go.kenn.io/kata/internal/testenv"
 	"go.kenn.io/kata/pkg/client/generated"
+	"go.kenn.io/kit/tui/splitlayout"
 )
 
 // recurrenceHarness drives the Repeat form of one issue held by a real daemon.
@@ -433,23 +434,32 @@ func TestRecurrenceFormDropsAReplyForATargetTheUserLeft(t *testing.T) {
 	cases := []struct {
 		name string
 		view viewID
+		// split shows list and detail side by side, with the list focused.
+		split bool
 		// move changes what the user is looking at while O's read is pending.
 		move func(h *recurrenceHarness)
 	}{
-		{"same short ID in another project", viewList, func(h *recurrenceHarness) {
+		{"same short ID in another project", viewList, false, func(h *recurrenceHarness) {
 			h.m.list.issues = []Issue{h.issueInAnotherProjectWithTheSameShortID()}
 		}},
-		{"detail reopened", viewDetail, func(h *recurrenceHarness) {
+		{"detail reopened", viewDetail, false, func(h *recurrenceHarness) {
 			h.m.detail.gen++
 		}},
-		{"list to detail", viewList, func(h *recurrenceHarness) {
+		{"list to detail", viewList, false, func(h *recurrenceHarness) {
 			h.m.view = viewDetail
+		}},
+		{"help opened in split layout", viewList, true, func(h *recurrenceHarness) {
+			h.key(runeKey('?'))
+			require.Equal(h.t, viewHelp, h.m.view)
 		}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newRecurrenceHarness(t, tc.view)
 			h.m.scope.allProjects = true
+			if tc.split {
+				h.m.layout, h.m.focus = splitlayout.Split, focusList
+			}
 			cmd := h.key(runeKey('O'))
 			loaded := msgOfType[recurrenceFormLoadedMsg](t, cmd)
 

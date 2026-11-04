@@ -162,8 +162,13 @@ func (m Model) openRecurrenceForm(msg recurrenceFormLoadedMsg) Model {
 // stillShowsRecurrenceTarget reports whether the issue O was pressed on is
 // still the one shown, in the same view: two projects' issues can share a
 // short ID, and a reopened detail or a switch between list and detail
-// invalidates a read made from the earlier view.
+// invalidates a read made from the earlier view. Another screen in front,
+// such as Help, means the issue is not shown at all, even though split
+// layout keeps its pane focus behind it.
 func (m Model) stillShowsRecurrenceTarget(want formTarget) bool {
+	if m.view != viewList && m.view != viewDetail {
+		return false
+	}
 	got, issue, ok := m.activeIssueTarget()
 	if !ok {
 		return false
