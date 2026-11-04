@@ -425,3 +425,64 @@ func TestRecurrenceKeyUsesTheSamePermissionGateAsOtherEdits(t *testing.T) {
 	assert.Empty(t, msgsOfType[recurrenceFormLoadedMsg](cmd), "nothing is read for a key that may not edit")
 	assert.Equal(t, inputNone, h.m.input.kind)
 }
+
+// TestRecurrenceFormDropsAReplyForATargetTheUserLeft holds O's read until
+// the user has moved on, then delivers it: a form opened on the old issue
+// would save to that issue while another one is shown.
+func TestRecurrenceFormDropsAReplyForATargetTheUserLeft(t *testing.T) {
+	cases := []struct {
+		name string
+		view viewID
+		// move changes what the user is looking at while O's read is pending.
+		move func(h *recurrenceHarness)
+	}{
+		{"same short ID in another project", viewList, func(h *recurrenceHarness) {
+			h.m.list.issues = []Issue{h.issueInAnotherProjectWithTheSameShortID()}
+		}},
+		{"detail reopened", viewDetail, func(h *recurrenceHarness) {
+			h.m.detail.gen++
+		}},
+		{"list to detail", viewList, func(h *recurrenceHarness) {
+			h.m.view = viewDetail
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newRecurrenceHarness(t, tc.view)
+			h.m.scope.allProjects = true
+			cmd := h.key(runeKey('O'))
+			loaded := msgOfType[recurrenceFormLoadedMsg](t, cmd)
+
+			tc.move(h)
+			out, _ := h.m.Update(loaded)
+			h.m = out.(Model)
+
+			assert.Equal(t, inputNone, h.m.input.kind, "the read belongs to an issue the user left")
+			if h.m.input.kind == inputRecurrenceForm {
+				// A form opened anyway: show what its save would write.
+				h.fill("FREQ=DAILY", "2026-11-09", "Europe/Paris")
+				h.save()
+			}
+			assert.Empty(t, h.rows(), "nothing repeats on the issue the user left")
+		})
+	}
+}
+
+// issueInAnotherProjectWithTheSameShortID creates an issue in a second
+// project and gives its row the first issue's short ID, as two projects'
+// issues can share one.
+func (h *recurrenceHarness) issueInAnotherProjectWithTheSameShortID() Issue {
+	h.t.Helper()
+	ctx := h.t.Context()
+	other, err := h.env.DB.CreateProject(ctx, "other-project")
+	require.NoError(h.t, err)
+	created, _, err := h.env.DB.CreateIssue(ctx, db.CreateIssueParams{
+		ProjectID: other.ID, Title: "Other", Body: "body", Author: "alice",
+	})
+	require.NoError(h.t, err)
+	detail, err := h.client.GetIssueDetail(ctx, other.ID, created.UID)
+	require.NoError(h.t, err)
+	row := *detail.Issue
+	row.ShortID = h.m.list.issues[0].ShortID
+	return row
+}

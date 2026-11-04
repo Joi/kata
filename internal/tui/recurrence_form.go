@@ -97,10 +97,11 @@ func (m Model) routeRecurrenceKey(msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 	if !m.keymap.SetRecurrence.matches(msg) {
 		return m, nil, false
 	}
-	target, _, ok := m.activeIssueTarget()
+	target, issue, ok := m.activeIssueTarget()
 	if !ok {
 		return m, nil, true
 	}
+	target.issueUID = issue.UID
 	m.nextFormGen++
 	return m, readRecurrenceForm(m.api, target, m.nextFormGen, m.connGen), true
 }
@@ -139,7 +140,7 @@ func (m Model) openRecurrenceForm(msg recurrenceFormLoadedMsg) Model {
 	if m.staleConnMsg(msg.connGen) || msg.formGen != m.nextFormGen || m.input.kind != inputNone || m.modal != modalNone {
 		return m
 	}
-	if target, _, ok := m.activeIssueTarget(); !ok || target.issueShortID != msg.target.issueShortID {
+	if !m.stillShowsRecurrenceTarget(msg.target) {
 		return m
 	}
 	if msg.refused != nil {
@@ -156,6 +157,20 @@ func (m Model) openRecurrenceForm(msg recurrenceFormLoadedMsg) Model {
 	m.input = newRecurrenceForm(msg.target, msg.issue, msg.recurrence)
 	m.input.formGen = msg.formGen
 	return m
+}
+
+// stillShowsRecurrenceTarget reports whether the issue O was pressed on is
+// still the one shown, in the same view: two projects' issues can share a
+// short ID, and a reopened detail or a switch between list and detail
+// invalidates a read made from the earlier view.
+func (m Model) stillShowsRecurrenceTarget(want formTarget) bool {
+	got, issue, ok := m.activeIssueTarget()
+	if !ok {
+		return false
+	}
+	return got.origin == want.origin && got.detailGen == want.detailGen &&
+		got.projectID == want.projectID && got.issueShortID == want.issueShortID &&
+		issue.UID == want.issueUID
 }
 
 // routeRecurrenceFormKey handles ctrl+x, the stop key, which asks first.
