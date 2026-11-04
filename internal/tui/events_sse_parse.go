@@ -210,6 +210,14 @@ func decodeEventReceived(f frame) eventReceivedMsg {
 	if p.Type == "issue.links_changed" && len(p.Payload) > 0 {
 		out.linksChanged = parentEndpointsFromLinksChangedPayload(p.Payload)
 	}
+	if strings.HasPrefix(p.Type, "recurrence.") && len(p.Payload) > 0 {
+		var rec struct {
+			RecurrenceUID string `json:"recurrence_uid"`
+		}
+		if json.Unmarshal(p.Payload, &rec) == nil {
+			out.recurrenceUID = rec.RecurrenceUID
+		}
+	}
 	return out
 }
 

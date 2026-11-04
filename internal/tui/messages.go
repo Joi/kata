@@ -214,6 +214,8 @@ type eventReceivedMsg struct {
 	replyToUIDs     []string
 	link            *linkPayload
 	linksChanged    *linksChangedParents
+	// recurrenceUID is the recurrence a recurrence.* event names.
+	recurrenceUID string
 }
 
 // linkPayload mirrors the per-link issue.linked / issue.unlinked

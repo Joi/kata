@@ -26,6 +26,8 @@ type recurrenceHarness struct {
 	api    *generated.Client
 	issue  db.Issue
 	m      Model
+	// after is what the model did after the last save it answered.
+	after tea.Cmd
 }
 
 func newRecurrenceHarness(t *testing.T, view viewID) *recurrenceHarness {

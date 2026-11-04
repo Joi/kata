@@ -12,6 +12,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"go.kenn.io/kata/internal/recurrence/recurrenceclient"
 	"go.kenn.io/kata/internal/uid"
 	"go.kenn.io/kit/tui/splitlayout"
 )
@@ -1882,7 +1883,23 @@ func (m Model) routeFormMutation(mut mutationDoneMsg) (tea.Model, tea.Cmd) {
 			mut.gen = m.detail.gen
 		}
 	}
+	if formKind == inputRecurrenceForm && target.origin == "list" {
+		return m.refreshDetailAfterListRecurrenceEdit(target, mut)
+	}
 	return m.routeMutation(mut)
+}
+
+// refreshDetailAfterListRecurrenceEdit routes a Repeat save made from the
+// list and refreshes the detail pane when it shows the same issue. The list
+// keeps its selection, so no detail read follows from it, and the issue
+// events the save emits may not name the issue at all.
+func (m Model) refreshDetailAfterListRecurrenceEdit(target formTarget, mut mutationDoneMsg) (tea.Model, tea.Cmd) {
+	next, cmd := m.routeMutation(mut)
+	nm, ok := next.(Model)
+	if !ok || nm.detail.issue == nil || nm.detail.scopePID != target.projectID || nm.detail.issue.ShortID != target.issueShortID {
+		return next, cmd
+	}
+	return nm, tea.Batch(cmd, nm.scheduleDetailRefresh())
 }
 
 // routeEditorReturn handles editorReturnedMsg at the Model level.
@@ -2846,7 +2863,9 @@ func (m Model) eventAffectsView(msg eventReceivedMsg) bool {
 // Moves and soft-deletes match displayed endpoint
 // UIDs; moves into the displayed project and restores refresh even after the
 // prior projection dropped that endpoint. Project lifecycle events match the
-// endpoint's displayed project ID when available. Each fetch is tagged with
+// endpoint's displayed project ID when available. Recurrence updates and
+// deletions name only their recurrence, so they match the recurrence the
+// pane shows, in the displayed project. Each fetch is tagged with
 // the current detail-open gen so applyFetched drops it if the user navigates.
 func (m *Model) maybeRefetchOpenDetail(msg eventReceivedMsg) tea.Cmd {
 	if m.api == nil {
@@ -2863,10 +2882,18 @@ func (m *Model) maybeRefetchOpenDetail(msg eventReceivedMsg) tea.Cmd {
 	projectCommentArrival := msg.eventType == "issue.snapshot" || (m.issueScoped && msg.eventType == "issue.commented")
 	ref := m.detail.issue.ShortID
 	uid := m.detail.issue.UID
-	if !msg.matchesIssue(ref, uid) && !commentMatch && !relationLifecycleMatch && !projectCommentArrival {
+	recurrenceMatch := msg.matchesRecurrence(m.detail.recurrence)
+	if !msg.matchesIssue(ref, uid) && !commentMatch && !relationLifecycleMatch && !projectCommentArrival && !recurrenceMatch {
 		return nil
 	}
 	return m.scheduleDetailRefresh()
+}
+
+// matchesRecurrence reports whether a recurrence event names the recurrence
+// the open detail shows. The caller has already required the event's project
+// to be the displayed one.
+func (msg eventReceivedMsg) matchesRecurrence(shown *recurrenceclient.View) bool {
+	return shown != nil && msg.recurrenceUID != "" && msg.recurrenceUID == shown.UID
 }
 
 // matchesIssue reports whether the event names the watched issue.
