@@ -12,6 +12,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"go.kenn.io/kata/internal/uid"
 	"go.kenn.io/kit/tui/splitlayout"
 )
@@ -3715,7 +3716,7 @@ func (m Model) overlayInputAndModal(body string) string {
 		// The footer lists the form's keys only while no modal replaces them.
 		chrome := formChrome{actionsInFooter: false}
 		form := renderCenteredFormWith(m.input, m.width, m.height, now, chrome)
-		formCoversFooter = !footerVisible(lipgloss.Height(form))
+		formCoversFooter = !footerVisible(form)
 		if m.modal == modalNone && !formCoversFooter {
 			chrome.actionsInFooter = true
 			form = renderCenteredFormWith(m.input, m.width, m.height, now, chrome)
@@ -3725,7 +3726,7 @@ func (m Model) overlayInputAndModal(body string) string {
 	if m.modal != modalNone {
 		modal := renderConfirmModal(m.modal, m.reopenPrompt)
 		if m.modal == modalStopRecurrence && !formCoversFooter &&
-			footerVisible(lipgloss.Height(renderStopRecurrenceModal(false))) {
+			footerVisible(renderStopRecurrenceModal(false)) {
 			modal = renderStopRecurrenceModal(false)
 		}
 		body = overlayModal(body, modal, m.width, m.height)
@@ -3733,21 +3734,29 @@ func (m Model) overlayInputAndModal(body string) string {
 	return body
 }
 
-// footerVisibleBelow reports, for an overlay of a given height, whether the
-// background's footer help table both lists the active form's or modal's keys
-// and stays uncovered once overlayModal centers the overlay. A form or modal
-// then leaves those keys to the footer; otherwise it lists them itself, so
-// each action hint appears exactly once. Backgrounds without that footer (too
-// narrow, too short, Help, auxiliary views) never match.
-func (m Model) footerVisibleBelow(body string) func(overlayHeight int) bool {
+// footerVisibleBelow reports, for an overlay, whether the background's footer
+// help table both lists the active form's or modal's keys and keeps every key
+// uncovered once overlayModal centers the overlay: the overlay ends above the
+// footer, or starts right of the footer's text. A form or modal then leaves
+// those keys to the footer; otherwise it lists them itself, so each action
+// hint appears exactly once. Backgrounds without that footer (too narrow, too
+// short, Help, auxiliary views) never match.
+func (m Model) footerVisibleBelow(body string) func(overlay string) bool {
 	footer := renderFooterHelpTable(m.helpRows(), m.width)
 	bodyLines := strings.Count(body, "\n") + 1
 	if footer == "" || bodyLines > m.height || !strings.HasSuffix(body, "\n"+footer) {
-		return func(int) bool { return false }
+		return func(string) bool { return false }
 	}
 	footerTop := bodyLines - lipgloss.Height(footer)
-	return func(overlayHeight int) bool {
-		return max((m.height-overlayHeight)/2, 0)+overlayHeight <= footerTop
+	footerTextW := 0
+	for line := range strings.SplitSeq(footer, "\n") {
+		footerTextW = max(footerTextW, ansi.StringWidth(strings.TrimRight(ansi.Strip(line), " ")))
+	}
+	return func(overlay string) bool {
+		overlayH, overlayW := lipgloss.Height(overlay), lipgloss.Width(overlay)
+		above := max((m.height-overlayH)/2, 0)+overlayH <= footerTop
+		beside := max((m.width-overlayW)/2, 0) >= footerTextW
+		return above || beside
 	}
 }
 

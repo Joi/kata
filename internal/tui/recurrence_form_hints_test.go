@@ -122,3 +122,39 @@ func TestRecurrenceActionHintsMoveIntoTheFormWhenItCoversTheFooter(t *testing.T)
 	require.Equal(t, modalStopRecurrence, h.m.modal)
 	assert.Contains(t, h.page(), "[Y] Stop repeating    [N] Keep", "the form hides the footer's y and n:\n%s", h.page())
 }
+
+// A form tall enough to reach the footer rows on a wide terminal still leaves
+// the footer's keys visible beside it, so the form does not repeat them.
+func TestRecurrenceActionHintsStayInAFooterTheFormDoesNotReach(t *testing.T) {
+	h := newRecurrenceHarness(t, viewDetail)
+	h.startBehindTheTUI("FREQ=WEEKLY", "2026-11-09", "Europe/Paris")
+	h.m.width, h.m.height = 240, 12
+	h.open()
+	h.fill("every other tuesday", "2026-11-09", "Europe/Paris")
+	h.save()
+	require.NotEmpty(t, h.m.input.err)
+
+	page := h.page()
+	assert.Equal(t, 1, strings.Count(page, "stop repeating"), page)
+	assert.Contains(t, lastLines(page, 1), "ctrl+x stop repeating", "the footer keeps the shortcut:\n%s", page)
+
+	h.key(tea.KeyPressMsg{Code: 'x', Mod: tea.ModCtrl})
+	require.Equal(t, modalStopRecurrence, h.m.modal)
+	assert.NotContains(t, h.page(), "[Y]", "the footer lists y and n:\n%s", h.page())
+}
+
+// Below the form's minimum size the form collapses to its active field, and
+// no footer is drawn, so the collapsed form still names the stop shortcut.
+func TestRecurrenceTinyFormKeepsTheStopShortcut(t *testing.T) {
+	for _, size := range []struct{ width, height int }{{79, 11}, {120, 9}, {39, 40}} {
+		t.Run(fmt.Sprintf("%dx%d", size.width, size.height), func(t *testing.T) {
+			h := newRecurrenceHarness(t, viewDetail)
+			h.startBehindTheTUI("FREQ=WEEKLY", "2026-11-09", "Europe/Paris")
+			h.m.width, h.m.height = size.width, size.height
+			h.open()
+
+			page := h.page()
+			assert.Equal(t, 1, strings.Count(page, "stop repeating"), page)
+		})
+	}
+}

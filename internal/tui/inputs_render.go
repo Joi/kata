@@ -91,7 +91,12 @@ type formChrome struct {
 
 func renderCenteredFormWith(s inputState, width, height int, now time.Time, chrome formChrome) string {
 	if width < formMinWidth || height < formMinHeight {
-		return renderTinyFormFallback(s)
+		tiny := renderTinyFormFallback(s)
+		if s.kind == inputRecurrenceForm && tiny != "" {
+			// The only form with a key no footer shows at this size.
+			tiny += "\n" + renderRecurrenceFooter(s, max(width, 1), chrome)
+		}
+		return tiny
 	}
 	innerW := formInnerWidth(width)
 	innerH := formInnerHeight(height)
